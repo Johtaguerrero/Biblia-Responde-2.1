@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
+import { GoogleGenAI, LiveServerMessage } from "@google/genai";
 import { SYSTEM_PROMPT } from '../constants';
 
 export const useLiveSession = () => {
@@ -15,12 +15,20 @@ export const useLiveSession = () => {
   const sessionRef = useRef<any>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const isMountedRef = useRef(true);
 
   // Volume analyzer
   const analyzerRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   const updateVolume = () => {
+    if (!isMountedRef.current) return;
+    
     if (analyzerRef.current) {
       const dataArray = new Uint8Array(analyzerRef.current.frequencyBinCount);
       analyzerRef.current.getByteFrequencyData(dataArray);
@@ -44,13 +52,23 @@ export const useLiveSession = () => {
       setError(null);
       // Retrieve key from Env or LocalStorage
       const apiKey = process.env.API_KEY || localStorage.getItem('gemini_api_key');
-      if (!apiKey) throw new Error("Chave API não encontrada. Vá em Ajustes.");
+      if (!apiKey) throw new Error("Chave API não encontrada.");
 
       const ai = new GoogleGenAI({ apiKey });
 
       // Initialize Audio Contexts
-      inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      // We explicitly create them inside the user gesture flow
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      inputAudioContextRef.current = new AudioContextClass({ sampleRate: 16000 });
+      audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+
+      // CRITICAL FIX: Explicitly resume contexts to bypass browser autoplay policies
+      if (inputAudioContextRef.current.state === 'suspended') {
+        await inputAudioContextRef.current.resume();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
 
       // Setup output analyzer for visualizer
       analyzerRef.current = audioContextRef.current.createAnalyser();
@@ -58,21 +76,29 @@ export const useLiveSession = () => {
       updateVolume();
 
       // Get Microphone Stream
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        } 
+      });
       mediaStreamRef.current = stream;
 
       // Connect to Gemini Live
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
-          responseModalities: [Modality.AUDIO],
+          // Use string literal 'AUDIO' to avoid enum import issues
+          responseModalities: ['AUDIO'], 
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }, // Kore is softer/soothing
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
           },
           systemInstruction: SYSTEM_PROMPT,
         },
         callbacks: {
             onopen: () => {
+              if (!isMountedRef.current) return;
               setIsConnected(true);
               
               // Process Input Audio
@@ -82,76 +108,99 @@ export const useLiveSession = () => {
               const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
               
               scriptProcessor.onaudioprocess = (e) => {
+                if (!isConnected && !sessionRef.current) return; // Guard clause
+
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
                 
+                // Only send if session is valid
                 sessionPromise.then((session: any) => {
-                  session.sendRealtimeInput({ media: pcmBlob });
-                });
-                
-                // Simple input visualization if needed, but we focus on output for now
+                  if (isMountedRef.current) {
+                    session.sendRealtimeInput({ media: pcmBlob });
+                  }
+                }).catch(console.error);
               };
 
               source.connect(scriptProcessor);
               scriptProcessor.connect(inputAudioContextRef.current.destination);
             },
             onmessage: async (message: LiveServerMessage) => {
+              if (!isMountedRef.current) return;
+
+              // Handle Audio Output
               if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
                 setIsSpeaking(true);
                 const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
                 
                 if (audioContextRef.current) {
                    const audioCtx = audioContextRef.current;
-                   const audioBuffer = await decodeAudioData(
-                      decode(base64Audio),
-                      audioCtx,
-                      24000,
-                      1
-                   );
+                   try {
+                     const audioBuffer = await decodeAudioData(
+                        decode(base64Audio),
+                        audioCtx,
+                        24000,
+                        1
+                     );
 
-                   const source = audioCtx.createBufferSource();
-                   source.buffer = audioBuffer;
-                   
-                   // Connect to analyzer for visualization -> then to destination
-                   if (analyzerRef.current) {
-                      source.connect(analyzerRef.current);
-                      analyzerRef.current.connect(audioCtx.destination);
-                   } else {
-                      source.connect(audioCtx.destination);
+                     const source = audioCtx.createBufferSource();
+                     source.buffer = audioBuffer;
+                     
+                     if (analyzerRef.current) {
+                        source.connect(analyzerRef.current);
+                        analyzerRef.current.connect(audioCtx.destination);
+                     } else {
+                        source.connect(audioCtx.destination);
+                     }
+
+                     source.addEventListener('ended', () => {
+                        sourcesRef.current.delete(source);
+                        if (sourcesRef.current.size === 0 && isMountedRef.current) {
+                            setIsSpeaking(false);
+                        }
+                     });
+
+                     const currentTime = audioCtx.currentTime;
+                     if (nextStartTimeRef.current < currentTime) {
+                       nextStartTimeRef.current = currentTime;
+                     }
+                     
+                     source.start(nextStartTimeRef.current);
+                     nextStartTimeRef.current += audioBuffer.duration;
+                     sourcesRef.current.add(source);
+                   } catch (decodeErr) {
+                     console.error("Audio decode error", decodeErr);
                    }
-
-                   source.addEventListener('ended', () => {
-                      sourcesRef.current.delete(source);
-                      if (sourcesRef.current.size === 0) setIsSpeaking(false);
-                   });
-
-                   const currentTime = audioCtx.currentTime;
-                   if (nextStartTimeRef.current < currentTime) {
-                     nextStartTimeRef.current = currentTime;
-                   }
-                   
-                   source.start(nextStartTimeRef.current);
-                   nextStartTimeRef.current += audioBuffer.duration;
-                   sourcesRef.current.add(source);
                 }
               }
 
+              // Handle Interruption
               if (message.serverContent?.interrupted) {
-                // Clear audio queue
-                sourcesRef.current.forEach(source => source.stop());
+                sourcesRef.current.forEach(source => {
+                    try { source.stop(); } catch(e) {}
+                });
                 sourcesRef.current.clear();
                 nextStartTimeRef.current = 0;
-                setIsSpeaking(false);
+                if (isMountedRef.current) setIsSpeaking(false);
               }
             },
             onclose: () => {
-              setIsConnected(false);
-              setIsSpeaking(false);
+              if (isMountedRef.current) {
+                setIsConnected(false);
+                setIsSpeaking(false);
+              }
             },
             onerror: (err) => {
               console.error("Live API Error:", err);
-              setError("Erro na conexão. Verifique sua chave API.");
-              setIsConnected(false);
+              if (isMountedRef.current) {
+                let msg = "Erro na conexão.";
+                if (err instanceof Error) {
+                     if (err.message.includes("403")) msg = "Acesso negado. Verifique sua chave API.";
+                     else if (err.message.includes("404")) msg = "Modelo de voz indisponível no momento.";
+                     else msg = `Erro: ${err.message}`;
+                }
+                setError(msg);
+                setIsConnected(false);
+              }
             }
         }
       });
@@ -160,15 +209,20 @@ export const useLiveSession = () => {
 
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Erro ao iniciar sessão.");
+      if (isMountedRef.current) {
+        setError(err.message || "Erro ao iniciar sessão.");
+      }
     }
   }, []);
 
   const disconnect = useCallback(() => {
     if (sessionRef.current) {
         sessionRef.current.then((session: any) => {
-            if(session.close) session.close();
+            if(session.close) {
+                try { session.close(); } catch(e) { console.warn("Error closing session", e); }
+            }
         });
+        sessionRef.current = null;
     }
 
     if (mediaStreamRef.current) {
@@ -177,27 +231,32 @@ export const useLiveSession = () => {
     }
 
     if (inputAudioContextRef.current) {
-      inputAudioContextRef.current.close();
+      try { inputAudioContextRef.current.close(); } catch(e) {}
       inputAudioContextRef.current = null;
     }
 
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      try { audioContextRef.current.close(); } catch(e) {}
       audioContextRef.current = null;
     }
 
     if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
     }
+    
+    // Clear audio buffer queue
+    sourcesRef.current.forEach(source => {
+        try { source.stop(); } catch(e) {}
+    });
+    sourcesRef.current.clear();
+    nextStartTimeRef.current = 0;
 
-    setIsConnected(false);
-    setIsSpeaking(false);
-    setVolume(0);
+    if (isMountedRef.current) {
+        setIsConnected(false);
+        setIsSpeaking(false);
+        setVolume(0);
+    }
   }, []);
-
-  useEffect(() => {
-    return () => disconnect();
-  }, [disconnect]);
 
   return { connect, disconnect, isConnected, isSpeaking, volume, error };
 };
@@ -208,7 +267,9 @@ function createBlob(data: Float32Array): { data: string, mimeType: string } {
   const l = data.length;
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
-    int16[i] = data[i] * 32768;
+    // Clamp values to prevent overflow distortion
+    const s = Math.max(-1, Math.min(1, data[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
   }
   return {
     data: encode(new Uint8Array(int16.buffer)),
