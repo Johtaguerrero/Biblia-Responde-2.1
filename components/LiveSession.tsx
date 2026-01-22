@@ -1,7 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLiveSession } from '../hooks/useLiveSession';
-import { PhoneOff, Mic, AlertCircle } from 'lucide-react';
-import { AppView } from '../types';
+import { PhoneOff, Mic, AlertCircle, Play } from 'lucide-react';
 
 interface LiveSessionProps {
   onExit: () => void;
@@ -9,14 +8,35 @@ interface LiveSessionProps {
 
 export const LiveSession: React.FC<LiveSessionProps> = ({ onExit }) => {
   const { connect, disconnect, isConnected, isSpeaking, volume, error } = useLiveSession();
+  const [showManualConnect, setShowManualConnect] = useState(false);
 
   useEffect(() => {
+    // Attempt auto-connect
     connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+    
+    // If not connected in 4 seconds, show manual connect button (often fixes "user gesture" issues in WebViews)
+    const timer = setTimeout(() => {
+        if (!isConnected) setShowManualConnect(true);
+    }, 4000);
+
+    return () => {
+        clearTimeout(timer);
+        disconnect();
+    };
+  }, [connect, disconnect]); // Remove isConnected dependency to avoid loop
+
+  // Clear manual connect if connection succeeds
+  useEffect(() => {
+    if(isConnected) setShowManualConnect(false);
+  }, [isConnected]);
 
   // Normalize volume for CSS scale (0-255 -> 1.0-2.0 approx)
   const scale = 1 + (volume / 100);
+
+  const handleManualConnect = () => {
+      setShowManualConnect(false);
+      connect();
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-leather-dark flex flex-col items-center justify-between p-8 text-ivory overflow-hidden">
@@ -33,13 +53,24 @@ export const LiveSession: React.FC<LiveSessionProps> = ({ onExit }) => {
       <div className="flex-1 flex items-center justify-center relative w-full">
         {/* Error State */}
         {error ? (
-           <div className="text-center bg-red-900/50 p-6 rounded-2xl border border-red-500/30">
+           <div className="text-center bg-red-900/50 p-6 rounded-2xl border border-red-500/30 max-w-sm">
              <AlertCircle className="mx-auto mb-4 text-red-300" size={48} />
              <p className="text-red-100 font-sans mb-4">{error}</p>
-             <button onClick={() => connect()} className="px-6 py-2 bg-red-700 rounded-full text-sm font-bold">
+             <button onClick={() => connect()} className="px-6 py-3 bg-red-700 rounded-full text-sm font-bold shadow-lg">
                Tentar Novamente
              </button>
            </div>
+        ) : !isConnected && showManualConnect ? (
+            /* Manual Connect Button (Fallback for strict WebViews) */
+            <div className="text-center animate-in fade-in zoom-in duration-300">
+                <button 
+                    onClick={handleManualConnect}
+                    className="w-32 h-32 rounded-full bg-gold text-leather-dark flex items-center justify-center shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:scale-105 transition-transform"
+                >
+                    <Play size={48} fill="currentColor" className="ml-2"/>
+                </button>
+                <p className="mt-6 text-gold font-bold uppercase tracking-widest text-sm">Toque para Iniciar</p>
+            </div>
         ) : (
           /* Pulsing Orb */
           <div className="relative flex items-center justify-center">

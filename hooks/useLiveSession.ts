@@ -40,7 +40,6 @@ export const useLiveSession = () => {
         if (audioContextRef.current?.state === 'suspended') {
           await audioContextRef.current.resume();
         }
-        // Re-request wake lock if we lost it
         requestWakeLock();
       }
     };
@@ -109,22 +108,33 @@ export const useLiveSession = () => {
       await requestWakeLock();
 
       // 2. Play Silent Audio (iOS/Android Background Keep-Alive Hack)
-      // This tricks the browser into thinking we are a music player, giving us higher priority
       if (!silentAudioRef.current) {
         silentAudioRef.current = new Audio(SILENT_AUDIO_URI);
         silentAudioRef.current.loop = true;
-        silentAudioRef.current.volume = 0.01; // Almost silent
+        silentAudioRef.current.volume = 0.01; 
       }
-      silentAudioRef.current.play().catch(e => console.warn("Silent audio playback failed", e));
+      try {
+        await silentAudioRef.current.play();
+      } catch(e) {
+        console.warn("Silent audio playback failed (user gesture missing?)", e);
+      }
 
+      // 3. Check Microphone Permissions
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Seu dispositivo não suporta acesso ao microfone ou não é seguro (HTTPS).");
+      }
 
-      // Initialize Audio Contexts
-      // We explicitly create them inside the user gesture flow
+      // Initialize Audio Contexts WITHOUT fixed sample rate
+      // This allows mobile devices to use their native hardware rate (e.g. 48000Hz) avoiding crashes
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      inputAudioContextRef.current = new AudioContextClass({ sampleRate: 16000 });
-      audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+      
+      // Input Context (Microphone)
+      inputAudioContextRef.current = new AudioContextClass();
+      
+      // Output Context (Speaker)
+      audioContextRef.current = new AudioContextClass();
 
-      // CRITICAL FIX: Explicitly resume contexts to bypass browser autoplay policies
+      // Explicitly resume contexts
       if (inputAudioContextRef.current.state === 'suspended') {
         await inputAudioContextRef.current.resume();
       }
@@ -132,7 +142,7 @@ export const useLiveSession = () => {
         await audioContextRef.current.resume();
       }
 
-      // Setup output analyzer for visualizer
+      // Setup output analyzer
       analyzerRef.current = audioContextRef.current.createAnalyser();
       analyzerRef.current.fftSize = 256;
       updateVolume();
@@ -142,7 +152,8 @@ export const useLiveSession = () => {
         audio: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true
+            autoGainControl: true,
+            sampleRate: 16000 // Try to request 16k, but browser might ignore
         } 
       });
       mediaStreamRef.current = stream;
@@ -151,7 +162,6 @@ export const useLiveSession = () => {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
-          // Use string literal 'AUDIO' to avoid enum import issues
           responseModalities: ['AUDIO'], 
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
@@ -163,19 +173,26 @@ export const useLiveSession = () => {
               if (!isMountedRef.current) return;
               setIsConnected(true);
               
-              // Process Input Audio
               if (!inputAudioContextRef.current) return;
               
               const source = inputAudioContextRef.current.createMediaStreamSource(stream);
               const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
               
               scriptProcessor.onaudioprocess = (e) => {
-                if (!isConnected && !sessionRef.current) return; // Guard clause
+                if (!isConnected && !sessionRef.current) return;
 
                 const inputData = e.inputBuffer.getChannelData(0);
-                const pcmBlob = createBlob(inputData);
                 
-                // Only send if session is valid
+                // Downsample to 16000Hz if necessary
+                const currentRate = inputAudioContextRef.current?.sampleRate || 16000;
+                let dataToSend = inputData;
+                
+                if (currentRate !== 16000) {
+                    dataToSend = downsampleBuffer(inputData, currentRate, 16000);
+                }
+
+                const pcmBlob = createBlob(dataToSend);
+                
                 sessionPromise.then((session: any) => {
                   if (isMountedRef.current) {
                     session.sendRealtimeInput({ media: pcmBlob });
@@ -197,10 +214,13 @@ export const useLiveSession = () => {
                 if (audioContextRef.current) {
                    const audioCtx = audioContextRef.current;
                    try {
+                     // Gemini returns 24000Hz audio. 
+                     // We must create a buffer with that rate.
+                     // The browser's AudioContext will handle resampling to hardware rate on playback.
                      const audioBuffer = await decodeAudioData(
                         decode(base64Audio),
                         audioCtx,
-                        24000,
+                        24000, 
                         1
                      );
 
@@ -235,7 +255,6 @@ export const useLiveSession = () => {
                 }
               }
 
-              // Handle Interruption
               if (message.serverContent?.interrupted) {
                 sourcesRef.current.forEach(source => {
                     try { source.stop(); } catch(e) {}
@@ -258,7 +277,7 @@ export const useLiveSession = () => {
                 let msg = "Erro na conexão.";
                 if (err instanceof Error) {
                      if (err.message.includes("403")) msg = "Acesso negado. Verifique sua chave API.";
-                     else if (err.message.includes("404")) msg = "Modelo de voz indisponível no momento.";
+                     else if (err.message.includes("404")) msg = "Modelo de voz indisponível.";
                      else msg = `Erro: ${err.message}`;
                 }
                 setError(msg);
@@ -281,10 +300,8 @@ export const useLiveSession = () => {
   }, []);
 
   const disconnect = useCallback(() => {
-    // Release Wake Lock
     releaseWakeLock();
 
-    // Stop silent audio
     if (silentAudioRef.current) {
       silentAudioRef.current.pause();
       silentAudioRef.current = null;
@@ -318,7 +335,6 @@ export const useLiveSession = () => {
         cancelAnimationFrame(animationFrameRef.current);
     }
     
-    // Clear audio buffer queue
     sourcesRef.current.forEach(source => {
         try { source.stop(); } catch(e) {}
     });
@@ -337,11 +353,30 @@ export const useLiveSession = () => {
 
 // --- Helpers ---
 
+function downsampleBuffer(buffer: Float32Array, inputRate: number, outputRate: number): Float32Array {
+    if (outputRate === inputRate) return buffer;
+    const ratio = inputRate / outputRate;
+    const newLength = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLength);
+    
+    for (let i = 0; i < newLength; i++) {
+        const start = Math.floor(i * ratio);
+        const end = Math.floor((i + 1) * ratio);
+        let sum = 0;
+        let count = 0;
+        for (let j = start; j < end && j < buffer.length; j++) {
+            sum += buffer[j];
+            count++;
+        }
+        result[i] = count > 0 ? sum / count : buffer[start];
+    }
+    return result;
+}
+
 function createBlob(data: Float32Array): { data: string, mimeType: string } {
   const l = data.length;
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
-    // Clamp values to prevent overflow distortion
     const s = Math.max(-1, Math.min(1, data[i]));
     int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
   }
@@ -378,6 +413,8 @@ async function decodeAudioData(
 ): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
+  // Note: We create the buffer with the SOURCE sample rate (Gemini's 24000Hz).
+  // The AudioContext (which might be 48000Hz) handles the resampling playback automatically.
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
 
   for (let channel = 0; channel < numChannels; channel++) {
