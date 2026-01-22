@@ -42,10 +42,12 @@ export interface NavItem {
 
 // Extend Window interface for AI Studio integration
 declare global {
-  // We declare the AIStudio interface to ensure it has the methods we need.
-  // We do NOT redeclare Window.aistudio to avoid conflicts with existing environment definitions.
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
     openSelectKey: () => Promise<void>;
+  }
+
+  interface Window {
+    aistudio?: AIStudio;
   }
 }
