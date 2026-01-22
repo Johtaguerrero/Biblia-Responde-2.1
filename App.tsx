@@ -4,7 +4,7 @@ import { ChatInterface } from './components/ChatInterface';
 import { LiveSession } from './components/LiveSession';
 import { AppView, Settings } from './types';
 import { MOCK_DAILY_VERSE, SAMPLE_TOPICS, BIBLE_BOOKS } from './constants';
-import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone, Key, Lock, CheckCircle, ArrowRight, HelpCircle, ExternalLink } from 'lucide-react';
+import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone, Key, Lock, CheckCircle, ArrowRight, HelpCircle, ExternalLink, Copy } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.SPLASH);
@@ -125,85 +125,88 @@ const App: React.FC = () => {
   );
 
   const ApiSetupView = () => {
-    const [showHelp, setShowHelp] = useState(false);
-
     return (
       <div className="h-full bg-leather text-ivory flex flex-col p-6 text-center font-serif safe-area-top safe-area-bottom overflow-y-auto">
-        <div className="flex-1 flex flex-col items-center space-y-6 pt-8">
-          <div className="bg-leather-dark p-6 rounded-full border-2 border-gold shadow-gold mb-2">
-            <Key size={40} className="text-gold" />
-          </div>
+        <div className="flex-1 flex flex-col items-center space-y-6 pt-4 pb-8">
           
-          <div>
-            <h2 className="font-display text-2xl text-gold mb-2">Configuração de Acesso</h2>
-            <p className="text-base opacity-90 leading-relaxed max-w-sm mx-auto">
-              Para conversar com a Bíblia, é necessário uma chave de acesso (API Key).
+          <div className="space-y-2">
+            <div className="bg-leather-dark w-16 h-16 mx-auto rounded-full border-2 border-gold shadow-gold flex items-center justify-center">
+                <Key size={32} className="text-gold" />
+            </div>
+            <h2 className="font-display text-2xl text-gold">Chave de Acesso</h2>
+            <p className="text-sm opacity-80 leading-relaxed max-w-xs mx-auto">
+              Para usar a inteligência artificial da Bíblia Responde, você precisa de uma chave gratuita do Google.
             </p>
           </div>
           
+          {/* Tutorial Card */}
+          <div className="w-full max-w-sm bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-4">
+             <h3 className="text-gold font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+                <HelpCircle size={14} /> Como conseguir (Grátis)
+             </h3>
+             
+             <div className="space-y-3">
+                <div className="flex gap-3 items-start">
+                    <span className="bg-gold text-leather-dark font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs mt-0.5">1</span>
+                    <div className="space-y-1">
+                        <p className="text-sm text-stone-200">Acesse o site do Google.</p>
+                        <a 
+                            href="https://aistudio.google.com/app/apikey" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="bg-gold/10 hover:bg-gold/20 text-gold border border-gold/30 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-2 w-fit transition-colors"
+                        >
+                            Abrir Google AI Studio <ExternalLink size={12} />
+                        </a>
+                    </div>
+                </div>
+                
+                <div className="flex gap-3 items-start">
+                    <span className="bg-gold text-leather-dark font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs mt-0.5">2</span>
+                    <p className="text-sm text-stone-200 pt-0.5">Faça login e toque no botão azul <b>"Create API Key"</b>.</p>
+                </div>
+
+                 <div className="flex gap-3 items-start">
+                    <span className="bg-gold text-leather-dark font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs mt-0.5">3</span>
+                    <p className="text-sm text-stone-200 pt-0.5">Copie o código gerado e cole abaixo:</p>
+                </div>
+             </div>
+          </div>
+
           {/* Manual Input Section */}
-          <div className="w-full max-w-xs space-y-4 bg-white/5 p-4 rounded-xl border border-white/10">
-              <div className="text-left space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gold opacity-80">Insira sua Chave API</label>
-                  <input 
-                      type="password"
-                      value={manualKeyInput}
-                      onChange={(e) => setManualKeyInput(e.target.value)}
-                      placeholder="Cole sua chave (AIza...)"
-                      className="w-full bg-black/40 border border-gold/30 rounded-lg p-3 text-white placeholder-white/30 focus:border-gold focus:outline-none font-mono text-sm"
-                  />
-              </div>
+          <div className="w-full max-w-sm space-y-3">
+              <input 
+                  type="password"
+                  value={manualKeyInput}
+                  onChange={(e) => setManualKeyInput(e.target.value)}
+                  placeholder="Cole sua chave aqui (AIza...)"
+                  className="w-full bg-black/40 border-2 border-gold/30 rounded-xl p-4 text-white placeholder-white/30 focus:border-gold focus:outline-none font-mono text-sm shadow-inner"
+              />
               <button 
                   onClick={handleManualKeySubmit}
                   disabled={manualKeyInput.length < 10}
-                  className={`w-full font-display font-bold py-3 px-4 rounded-lg shadow-lg transition-all flex items-center justify-center gap-2 ${manualKeyInput.length > 10 ? 'bg-gold text-leather-dark hover:bg-gold-light' : 'bg-stone-700 text-stone-500'}`}
+                  className={`w-full font-display font-bold py-4 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${manualKeyInput.length > 10 ? 'bg-gold text-leather-dark hover:bg-gold-light scale-105' : 'bg-stone-800 text-stone-500 border border-white/10'}`}
               >
                   <span>Entrar no Aplicativo</span>
-                  <ArrowRight size={18} />
+                  <ArrowRight size={20} />
               </button>
           </div>
 
-          {/* Help Toggle */}
-          <button 
-            onClick={() => setShowHelp(!showHelp)}
-            className="flex items-center gap-2 text-gold-light/80 hover:text-gold text-sm font-sans"
-          >
-            <HelpCircle size={16} />
-            {showHelp ? "Ocultar ajuda" : "Onde consigo uma chave?"}
-          </button>
-
-          {/* Tutorial */}
-          {showHelp && (
-            <div className="w-full max-w-xs bg-black/20 p-4 rounded-lg text-left space-y-3 text-sm animate-in fade-in slide-in-from-top-2">
-              <p className="font-bold text-gold">Como criar uma chave grátis:</p>
-              <ol className="list-decimal pl-4 space-y-2 text-white/80">
-                <li>
-                  Acesse o <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-gold underline inline-flex items-center gap-1">
-                    Google AI Studio <ExternalLink size={10} />
-                  </a>
-                </li>
-                <li>Faça login com sua conta Google.</li>
-                <li>Clique no botão <strong>Create API Key</strong>.</li>
-                <li>Copie o código e cole no campo acima.</li>
-              </ol>
-            </div>
-          )}
-
           {/* Divider */}
-          <div className="flex items-center w-full max-w-xs gap-2 opacity-50 mt-4">
-              <div className="h-px bg-white/20 flex-1"></div>
-              <span className="text-xs uppercase">OU</span>
-              <div className="h-px bg-white/20 flex-1"></div>
+          <div className="flex items-center w-full max-w-xs gap-2 opacity-30 my-2">
+              <div className="h-px bg-white flex-1"></div>
+              <span className="text-[10px] uppercase">OU</span>
+              <div className="h-px bg-white flex-1"></div>
           </div>
 
           {/* Google Auth (If available) */}
           {window.aistudio && (
             <button 
                 onClick={handleConnectKey}
-                className="w-full max-w-xs bg-white/10 text-white border border-white/20 font-sans font-medium py-3 px-4 rounded-lg hover:bg-white/20 transition-all flex items-center justify-center gap-2 text-sm"
+                className="w-full max-w-sm bg-white/5 text-stone-300 border border-white/10 font-sans font-medium py-3 px-4 rounded-xl hover:bg-white/10 transition-all flex items-center justify-center gap-2 text-sm"
               >
                 <Lock size={16} />
-                Conectar com Google Cloud
+                Conexão Automática (Google Cloud)
               </button>
           )}
         </div>
