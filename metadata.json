@@ -1,0 +1,7 @@
+{
+  "name": "Bíblia Responde",
+  "description": "Um companheiro bíblico conversacional projetado para trazer paz e sabedoria através de chat de voz e texto.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

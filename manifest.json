@@ -1,0 +1,22 @@
+{
+  "name": "Bíblia Responde",
+  "short_name": "Bíblia",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#2B1B12",
+  "theme_color": "#2B1B12",
+  "orientation": "portrait",
+  "description": "Um companheiro bíblico conversacional que traz paz e sabedoria.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3004/3004458.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3004/3004458.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
