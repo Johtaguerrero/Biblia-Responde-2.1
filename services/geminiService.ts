@@ -2,16 +2,12 @@ import { GoogleGenAI } from "@google/genai";
 import { Message } from "../types";
 import { SYSTEM_PROMPT } from "../constants";
 
-let client: GoogleGenAI | null = null;
-
 const getClient = (): GoogleGenAI => {
-  if (!client) {
-    if (!process.env.API_KEY) {
-      throw new Error("API Key not found");
-    }
-    client = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  if (!process.env.API_KEY) {
+    throw new Error("API Key not found");
   }
-  return client;
+  // Create a new instance every time to ensure we use the latest API_KEY
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export const sendMessageToGemini = async (

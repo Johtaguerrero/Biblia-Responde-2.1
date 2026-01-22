@@ -4,7 +4,7 @@ import { ChatInterface } from './components/ChatInterface';
 import { LiveSession } from './components/LiveSession';
 import { AppView, Settings } from './types';
 import { MOCK_DAILY_VERSE, SAMPLE_TOPICS, BIBLE_BOOKS } from './constants';
-import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone } from 'lucide-react';
+import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone, Key, Lock } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.SPLASH);
@@ -14,9 +14,23 @@ const App: React.FC = () => {
     highContrast: false,
     voiceEnabled: true
   });
+  const [hasApiKey, setHasApiKey] = useState(false);
 
-  // Simulate Splash Screen
+  // Initial Checks
   useEffect(() => {
+    const checkApiKey = async () => {
+      // 1. Check env var (injected by build or runtime wrapper)
+      if (process.env.API_KEY) {
+        setHasApiKey(true);
+        return;
+      }
+      // 2. Check AI Studio wrapper
+      if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
+        setHasApiKey(true);
+      }
+    };
+    checkApiKey();
+
     const timer = setTimeout(() => {
       setCurrentView(AppView.ONBOARDING);
     }, 2500);
@@ -24,7 +38,36 @@ const App: React.FC = () => {
   }, []);
 
   const handleFinishOnboarding = () => {
-    setCurrentView(AppView.HOME);
+    if (hasApiKey) {
+      setCurrentView(AppView.HOME);
+    } else {
+      setCurrentView(AppView.API_SETUP);
+    }
+  };
+
+  const handleConnectKey = async () => {
+    if (window.aistudio) {
+      try {
+        await window.aistudio.openSelectKey();
+        // Assume success as per instructions to avoid race conditions
+        setHasApiKey(true);
+        setCurrentView(AppView.HOME);
+      } catch (e: any) {
+        console.error("Failed to select key", e);
+        // Handle race condition error where entity is not found immediately
+        if (e.message && e.message.includes("Requested entity was not found")) {
+            try {
+                await window.aistudio.openSelectKey();
+                setHasApiKey(true);
+                setCurrentView(AppView.HOME);
+                return;
+            } catch (retryError) {
+                console.error("Retry failed", retryError);
+            }
+        }
+        alert("Não foi possível conectar a chave. Tente novamente.");
+      }
+    }
   };
 
   /* --- VIEW COMPONENTS --- */
@@ -63,6 +106,52 @@ const App: React.FC = () => {
       >
         Começar
       </button>
+    </div>
+  );
+
+  const ApiSetupView = () => (
+    <div className="h-full bg-leather text-ivory flex flex-col p-8 text-center font-serif safe-area-top safe-area-bottom">
+      <div className="flex-1 flex flex-col justify-center items-center space-y-6">
+        <div className="bg-leather-dark p-6 rounded-full border-2 border-gold shadow-gold mb-4">
+          <Key size={48} className="text-gold" />
+        </div>
+        <h2 className="font-display text-2xl text-gold">Configuração Necessária</h2>
+        <p className="text-lg opacity-90 leading-relaxed">
+          Para conversar com a Bíblia, precisamos conectar sua chave de acesso Google AI.
+        </p>
+        
+        {window.aistudio ? (
+          <div className="space-y-4 w-full">
+             <button 
+              onClick={handleConnectKey}
+              className="w-full bg-gold text-leather-dark font-display font-bold py-4 px-8 rounded-xl shadow-lg hover:bg-gold-light transition-transform active:scale-95 text-lg flex items-center justify-center gap-2"
+            >
+              <Lock size={20} />
+              Conectar Conta Google
+            </button>
+            <p className="text-xs text-white/40">
+              Você selecionará um projeto Google Cloud válido. <br/>
+              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="underline hover:text-white">Informações de cobrança</a>
+            </p>
+          </div>
+        ) : (
+          <div className="bg-red-900/50 border border-red-500/30 p-4 rounded-lg mt-4 text-sm">
+            <p className="font-bold mb-2">Ambiente de Desenvolvimento</p>
+            <p>Não foi possível detectar a interface de seleção automática.</p>
+            <p className="mt-2 text-white/70">
+              Por favor, crie um arquivo <code className="bg-black/30 px-1 rounded">.env</code> na raiz do projeto com:
+              <br/>
+              <code className="block mt-2 bg-black/50 p-2 rounded select-all">API_KEY=sua_chave_aqui</code>
+            </p>
+            <button 
+               onClick={() => window.location.reload()}
+               className="mt-4 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-xs uppercase font-bold tracking-widest"
+            >
+              Recarregar
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -245,6 +334,7 @@ const App: React.FC = () => {
 
   if (currentView === AppView.SPLASH) return <SplashView />;
   if (currentView === AppView.ONBOARDING) return <OnboardingView />;
+  if (currentView === AppView.API_SETUP) return <ApiSetupView />;
   if (currentView === AppView.LIVE) return <LiveSession onExit={() => setCurrentView(AppView.CHAT)} />;
 
   return (
