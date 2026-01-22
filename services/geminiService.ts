@@ -3,11 +3,14 @@ import { Message } from "../types";
 import { SYSTEM_PROMPT } from "../constants";
 
 const getClient = (): GoogleGenAI => {
-  if (!process.env.API_KEY) {
+  // Priority: 1. Env Var, 2. LocalStorage (User entered), 3. Error
+  const apiKey = process.env.API_KEY || localStorage.getItem('gemini_api_key');
+  
+  if (!apiKey) {
     throw new Error("API Key not found");
   }
   // Create a new instance every time to ensure we use the latest API_KEY
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return new GoogleGenAI({ apiKey: apiKey });
 };
 
 export const sendMessageToGemini = async (
@@ -37,6 +40,6 @@ export const sendMessageToGemini = async (
     return result.text || "Desculpe, não consegui processar sua mensagem. Tente novamente.";
   } catch (error) {
     console.error("Error communicating with Gemini:", error);
-    return "Houve um erro de conexão. Por favor, verifique sua internet e tente novamente.";
+    return "Houve um erro de conexão. Por favor, verifique se sua chave API está correta e tente novamente.";
   }
 };

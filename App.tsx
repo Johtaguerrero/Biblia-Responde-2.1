@@ -4,7 +4,7 @@ import { ChatInterface } from './components/ChatInterface';
 import { LiveSession } from './components/LiveSession';
 import { AppView, Settings } from './types';
 import { MOCK_DAILY_VERSE, SAMPLE_TOPICS, BIBLE_BOOKS } from './constants';
-import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone, Key, Lock } from 'lucide-react';
+import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone, Key, Lock, CheckCircle, ArrowRight, HelpCircle, ExternalLink } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.SPLASH);
@@ -15,16 +15,23 @@ const App: React.FC = () => {
     voiceEnabled: true
   });
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [manualKeyInput, setManualKeyInput] = useState('');
 
   // Initial Checks
   useEffect(() => {
     const checkApiKey = async () => {
-      // 1. Check env var (injected by build or runtime wrapper)
+      // 1. Check env var (injected by build)
       if (process.env.API_KEY) {
         setHasApiKey(true);
         return;
       }
-      // 2. Check AI Studio wrapper
+      // 2. Check LocalStorage (User entered key)
+      const storedKey = localStorage.getItem('gemini_api_key');
+      if (storedKey) {
+        setHasApiKey(true);
+        return;
+      }
+      // 3. Check AI Studio wrapper
       if (window.aistudio && await window.aistudio.hasSelectedApiKey()) {
         setHasApiKey(true);
       }
@@ -45,16 +52,24 @@ const App: React.FC = () => {
     }
   };
 
+  const handleManualKeySubmit = () => {
+    if (manualKeyInput.trim().length > 10) {
+      localStorage.setItem('gemini_api_key', manualKeyInput.trim());
+      setHasApiKey(true);
+      setCurrentView(AppView.HOME);
+    } else {
+      alert("Por favor, insira uma chave API válida.");
+    }
+  };
+
   const handleConnectKey = async () => {
     if (window.aistudio) {
       try {
         await window.aistudio.openSelectKey();
-        // Assume success as per instructions to avoid race conditions
         setHasApiKey(true);
         setCurrentView(AppView.HOME);
       } catch (e: any) {
         console.error("Failed to select key", e);
-        // Handle race condition error where entity is not found immediately
         if (e.message && e.message.includes("Requested entity was not found")) {
             try {
                 await window.aistudio.openSelectKey();
@@ -65,7 +80,7 @@ const App: React.FC = () => {
                 console.error("Retry failed", retryError);
             }
         }
-        alert("Não foi possível conectar a chave. Tente novamente.");
+        alert("Não foi possível conectar a chave automaticamente. Tente inserir manualmente.");
       }
     }
   };
@@ -109,51 +124,92 @@ const App: React.FC = () => {
     </div>
   );
 
-  const ApiSetupView = () => (
-    <div className="h-full bg-leather text-ivory flex flex-col p-8 text-center font-serif safe-area-top safe-area-bottom">
-      <div className="flex-1 flex flex-col justify-center items-center space-y-6">
-        <div className="bg-leather-dark p-6 rounded-full border-2 border-gold shadow-gold mb-4">
-          <Key size={48} className="text-gold" />
-        </div>
-        <h2 className="font-display text-2xl text-gold">Configuração Necessária</h2>
-        <p className="text-lg opacity-90 leading-relaxed">
-          Para conversar com a Bíblia, precisamos conectar sua chave de acesso Google AI.
-        </p>
-        
-        {window.aistudio ? (
-          <div className="space-y-4 w-full">
-             <button 
-              onClick={handleConnectKey}
-              className="w-full bg-gold text-leather-dark font-display font-bold py-4 px-8 rounded-xl shadow-lg hover:bg-gold-light transition-transform active:scale-95 text-lg flex items-center justify-center gap-2"
-            >
-              <Lock size={20} />
-              Conectar Conta Google
-            </button>
-            <p className="text-xs text-white/40">
-              Você selecionará um projeto Google Cloud válido. <br/>
-              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="underline hover:text-white">Informações de cobrança</a>
+  const ApiSetupView = () => {
+    const [showHelp, setShowHelp] = useState(false);
+
+    return (
+      <div className="h-full bg-leather text-ivory flex flex-col p-6 text-center font-serif safe-area-top safe-area-bottom overflow-y-auto">
+        <div className="flex-1 flex flex-col items-center space-y-6 pt-8">
+          <div className="bg-leather-dark p-6 rounded-full border-2 border-gold shadow-gold mb-2">
+            <Key size={40} className="text-gold" />
+          </div>
+          
+          <div>
+            <h2 className="font-display text-2xl text-gold mb-2">Configuração de Acesso</h2>
+            <p className="text-base opacity-90 leading-relaxed max-w-sm mx-auto">
+              Para conversar com a Bíblia, é necessário uma chave de acesso (API Key).
             </p>
           </div>
-        ) : (
-          <div className="bg-red-900/50 border border-red-500/30 p-4 rounded-lg mt-4 text-sm">
-            <p className="font-bold mb-2">Ambiente de Desenvolvimento</p>
-            <p>Não foi possível detectar a interface de seleção automática.</p>
-            <p className="mt-2 text-white/70">
-              Por favor, crie um arquivo <code className="bg-black/30 px-1 rounded">.env</code> na raiz do projeto com:
-              <br/>
-              <code className="block mt-2 bg-black/50 p-2 rounded select-all">API_KEY=sua_chave_aqui</code>
-            </p>
+          
+          {/* Manual Input Section */}
+          <div className="w-full max-w-xs space-y-4 bg-white/5 p-4 rounded-xl border border-white/10">
+              <div className="text-left space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-gold opacity-80">Insira sua Chave API</label>
+                  <input 
+                      type="password"
+                      value={manualKeyInput}
+                      onChange={(e) => setManualKeyInput(e.target.value)}
+                      placeholder="Cole sua chave (AIza...)"
+                      className="w-full bg-black/40 border border-gold/30 rounded-lg p-3 text-white placeholder-white/30 focus:border-gold focus:outline-none font-mono text-sm"
+                  />
+              </div>
+              <button 
+                  onClick={handleManualKeySubmit}
+                  disabled={manualKeyInput.length < 10}
+                  className={`w-full font-display font-bold py-3 px-4 rounded-lg shadow-lg transition-all flex items-center justify-center gap-2 ${manualKeyInput.length > 10 ? 'bg-gold text-leather-dark hover:bg-gold-light' : 'bg-stone-700 text-stone-500'}`}
+              >
+                  <span>Entrar no Aplicativo</span>
+                  <ArrowRight size={18} />
+              </button>
+          </div>
+
+          {/* Help Toggle */}
+          <button 
+            onClick={() => setShowHelp(!showHelp)}
+            className="flex items-center gap-2 text-gold-light/80 hover:text-gold text-sm font-sans"
+          >
+            <HelpCircle size={16} />
+            {showHelp ? "Ocultar ajuda" : "Onde consigo uma chave?"}
+          </button>
+
+          {/* Tutorial */}
+          {showHelp && (
+            <div className="w-full max-w-xs bg-black/20 p-4 rounded-lg text-left space-y-3 text-sm animate-in fade-in slide-in-from-top-2">
+              <p className="font-bold text-gold">Como criar uma chave grátis:</p>
+              <ol className="list-decimal pl-4 space-y-2 text-white/80">
+                <li>
+                  Acesse o <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-gold underline inline-flex items-center gap-1">
+                    Google AI Studio <ExternalLink size={10} />
+                  </a>
+                </li>
+                <li>Faça login com sua conta Google.</li>
+                <li>Clique no botão <strong>Create API Key</strong>.</li>
+                <li>Copie o código e cole no campo acima.</li>
+              </ol>
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="flex items-center w-full max-w-xs gap-2 opacity-50 mt-4">
+              <div className="h-px bg-white/20 flex-1"></div>
+              <span className="text-xs uppercase">OU</span>
+              <div className="h-px bg-white/20 flex-1"></div>
+          </div>
+
+          {/* Google Auth (If available) */}
+          {window.aistudio && (
             <button 
-               onClick={() => window.location.reload()}
-               className="mt-4 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-xs uppercase font-bold tracking-widest"
-            >
-              Recarregar
-            </button>
-          </div>
-        )}
+                onClick={handleConnectKey}
+                className="w-full max-w-xs bg-white/10 text-white border border-white/20 font-sans font-medium py-3 px-4 rounded-lg hover:bg-white/20 transition-all flex items-center justify-center gap-2 text-sm"
+              >
+                <Lock size={16} />
+                Conectar com Google Cloud
+              </button>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const HomeView = () => (
     <div className="p-6 flex flex-col gap-6">
@@ -281,39 +337,29 @@ const App: React.FC = () => {
         </button>
       </section>
 
-      {/* Voice */}
+      {/* API Key Management */}
       <section>
-         <h3 className="font-display font-bold text-lg text-leather mb-4 flex items-center gap-2">
-            <Volume2 size={20}/> Voz
+        <h3 className="font-display font-bold text-lg text-leather mb-4 flex items-center gap-2">
+            <Key size={20}/> Chave de Acesso
         </h3>
-        <div className="bg-white rounded-xl p-4 shadow-sm space-y-4">
-            <div className="flex justify-between items-center">
-                <span>Narração Automática</span>
+        <div className="bg-white rounded-xl p-4 shadow-sm">
+            <p className="text-sm text-stone-500 mb-2">Chave salva no dispositivo</p>
+            <div className="flex gap-2">
+                <input 
+                    type="password" 
+                    value="************************" 
+                    disabled 
+                    className="flex-1 bg-stone-100 border-none rounded px-3 py-2 text-stone-500"
+                />
                 <button 
-                    onClick={() => setSettings(s => ({...s, voiceEnabled: !s.voiceEnabled}))}
-                    className={`w-12 h-6 rounded-full relative transition-colors ${settings.voiceEnabled ? 'bg-gold' : 'bg-stone-300'}`}
+                    onClick={() => {
+                        localStorage.removeItem('gemini_api_key');
+                        window.location.reload();
+                    }}
+                    className="bg-red-100 text-red-600 px-3 py-2 rounded font-bold text-sm hover:bg-red-200"
                 >
-                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${settings.voiceEnabled ? 'left-7' : 'left-1'}`} />
+                    Sair
                 </button>
-            </div>
-            <div className="pt-2 border-t border-stone-100">
-                 <span className="text-sm text-stone-500 mb-2 block">Velocidade da Fala</span>
-                 <div className="flex gap-2">
-                    {[0.8, 1.0, 1.2].map(speed => (
-                        <button 
-                            key={speed}
-                            onClick={() => setSettings(s => ({...s, voiceSpeed: speed}))}
-                            className={`flex-1 py-2 rounded border text-sm font-bold transition-all ${settings.voiceSpeed === speed ? 'bg-leather text-gold border-leather shadow-sm' : 'border-stone-200 text-stone-400 hover:bg-stone-50'}`}
-                        >
-                            {speed}x
-                        </button>
-                    ))}
-                 </div>
-                 <div className="flex justify-between text-xs text-stone-400 mt-1 px-1">
-                    <span>Lento</span>
-                    <span>Normal</span>
-                    <span>Rápido</span>
-                 </div>
             </div>
         </div>
       </section>

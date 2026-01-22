@@ -42,8 +42,9 @@ export const useLiveSession = () => {
   const connect = useCallback(async () => {
     try {
       setError(null);
-      const apiKey = process.env.API_KEY;
-      if (!apiKey) throw new Error("API Key not found");
+      // Retrieve key from Env or LocalStorage
+      const apiKey = process.env.API_KEY || localStorage.getItem('gemini_api_key');
+      if (!apiKey) throw new Error("Chave API não encontrada. Vá em Ajustes.");
 
       const ai = new GoogleGenAI({ apiKey });
 
@@ -149,7 +150,7 @@ export const useLiveSession = () => {
             },
             onerror: (err) => {
               console.error("Live API Error:", err);
-              setError("Erro na conexão. Tente novamente.");
+              setError("Erro na conexão. Verifique sua chave API.");
               setIsConnected(false);
             }
         }
@@ -165,9 +166,6 @@ export const useLiveSession = () => {
 
   const disconnect = useCallback(() => {
     if (sessionRef.current) {
-        // There isn't a direct .close() on the promise wrapper in the prompt example, 
-        // but typically we close media streams and context.
-        // Assuming session object has close if resolved.
         sessionRef.current.then((session: any) => {
             if(session.close) session.close();
         });
