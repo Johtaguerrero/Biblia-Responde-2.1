@@ -4,7 +4,7 @@ import { ChatInterface } from './components/ChatInterface';
 import { LiveSession } from './components/LiveSession';
 import { AppView, Settings } from './types';
 import { MOCK_DAILY_VERSE, SAMPLE_TOPICS, BIBLE_BOOKS } from './constants';
-import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone, Key, Lock, CheckCircle, ArrowRight, HelpCircle, ExternalLink, Copy } from 'lucide-react';
+import { MessageCircle, Play, Heart, Book, Sun, Moon, Volume2, Type, Sparkles, Phone, Key, Lock, CheckCircle, ArrowRight, HelpCircle, ExternalLink, Copy, Shield, ChevronLeft, Trash2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.SPLASH);
@@ -305,6 +305,69 @@ const App: React.FC = () => {
     </div>
   );
 
+  const PrivacyView = () => (
+    <div className="p-6 space-y-8 bg-white/50">
+       <button 
+        onClick={() => setCurrentView(AppView.SETTINGS)}
+        className="flex items-center gap-2 text-stone-500 hover:text-leather font-bold mb-4"
+       >
+         <ChevronLeft size={20} /> Voltar
+       </button>
+
+       <div className="text-center mb-8">
+         <Shield className="mx-auto text-gold mb-2" size={48} />
+         <h2 className="font-display text-2xl font-bold text-leather">Proteção de Dados</h2>
+         <p className="text-stone-500">Transparência e respeito com suas informações.</p>
+       </div>
+
+       <div className="space-y-6">
+         <section className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
+           <h3 className="font-bold text-lg text-leather mb-2">1. Seus dados ficam com você</h3>
+           <p className="text-stone-600 leading-relaxed">
+             O <strong>Bíblia Responde</strong> não possui um servidor central que guarda suas conversas. 
+             Todo o histórico do bate-papo fica salvo apenas dentro do seu próprio celular ou computador (usando o armazenamento do navegador).
+           </p>
+         </section>
+
+         <section className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
+           <h3 className="font-bold text-lg text-leather mb-2">2. Uso de Inteligência Artificial</h3>
+           <p className="text-stone-600 leading-relaxed">
+             Para responder às suas perguntas, o aplicativo envia o texto ou áudio da sua pergunta para o Google (Google Gemini API). 
+             O Google processa a resposta e devolve para o aplicativo.
+             <br/><br/>
+             <em className="text-sm">Nós não vendemos nem compartilhamos seus dados com anunciantes.</em>
+           </p>
+         </section>
+
+         <section className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
+           <h3 className="font-bold text-lg text-leather mb-2">3. Chave de Acesso</h3>
+           <p className="text-stone-600 leading-relaxed">
+             Sua chave de API (código de acesso) fica salva apenas no seu dispositivo para que você não precise digitá-la toda vez.
+           </p>
+         </section>
+
+         <section className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
+           <h3 className="font-bold text-lg text-leather mb-2">4. Seus Direitos (LGPD)</h3>
+           <p className="text-stone-600 leading-relaxed mb-4">
+             Você tem total controle sobre suas informações. Se desejar apagar tudo o que este aplicativo sabe sobre você, basta limpar os dados.
+           </p>
+           <button 
+             onClick={() => {
+               if(confirm("Tem certeza? Isso apagará sua chave de acesso e histórico deste dispositivo.")) {
+                 localStorage.clear();
+                 window.location.reload();
+               }
+             }}
+             className="w-full border-2 border-red-100 text-red-600 font-bold py-3 rounded-xl hover:bg-red-50 flex items-center justify-center gap-2"
+           >
+             <Trash2 size={18} />
+             Apagar Meus Dados Agora
+           </button>
+         </section>
+       </div>
+    </div>
+  );
+
   const SettingsView = () => (
     <div className="p-6 space-y-8">
       
@@ -367,7 +430,21 @@ const App: React.FC = () => {
         </div>
       </section>
 
-      <div className="pt-8 text-center">
+      {/* Privacy / LGPD Link */}
+      <section className="pt-4 border-t border-stone-200">
+         <button 
+            onClick={() => setCurrentView(AppView.PRIVACY)}
+            className="w-full flex items-center justify-between p-4 bg-stone-100 rounded-xl text-stone-600 hover:bg-stone-200 transition-colors"
+         >
+            <div className="flex items-center gap-3">
+              <Shield size={20} />
+              <span className="font-medium">Política de Privacidade (LGPD)</span>
+            </div>
+            <ArrowRight size={16} />
+         </button>
+      </section>
+
+      <div className="pt-4 text-center">
         <p className="text-xs text-stone-400">Versão 1.0.0 • Bíblia Responde</p>
       </div>
     </div>
@@ -391,13 +468,19 @@ const App: React.FC = () => {
         view={currentView} 
         setView={setCurrentView} 
         settings={settings}
-        title={currentView === AppView.CHAT ? "Conversa" : currentView === AppView.SETTINGS ? "Ajustes" : undefined}
+        title={
+          currentView === AppView.CHAT ? "Conversa" : 
+          currentView === AppView.SETTINGS ? "Ajustes" : 
+          currentView === AppView.PRIVACY ? "Privacidade" :
+          undefined
+        }
     >
       {currentView === AppView.HOME && <HomeView />}
       {currentView === AppView.CHAT && <ChatInterface settings={settings} onStartLive={() => setCurrentView(AppView.LIVE)} />}
       {currentView === AppView.READING && <ReadingView />}
       {currentView === AppView.SETTINGS && <SettingsView />}
       {currentView === AppView.FAVORITES && <FavoritesView />}
+      {currentView === AppView.PRIVACY && <PrivacyView />}
     </AppLayout>
   );
 };

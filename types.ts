@@ -9,7 +9,8 @@ export enum AppView {
   READING = 'READING',
   SETTINGS = 'SETTINGS',
   FAVORITES = 'FAVORITES',
-  LIVE = 'LIVE'
+  LIVE = 'LIVE',
+  PRIVACY = 'PRIVACY'
 }
 
 export interface Message {
