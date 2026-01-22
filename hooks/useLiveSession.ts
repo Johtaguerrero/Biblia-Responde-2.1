@@ -2,6 +2,9 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage } from "@google/genai";
 import { SYSTEM_PROMPT } from '../constants';
 
+// Tiny silent mp3 to keep the audio session active in background
+const SILENT_AUDIO_URI = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTVFMAAAANYAAAZW5jb2RlcgBMYXZmNTguMjkuMTAwAAAAAAAAAAAAAAH//ebdAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMGluZm8AAAAPAAAABwAAAB0AExMTE1NYWFhYZmZmZm5wcHBweHh4eH+AgICBjY2NjZSUlJSZnZ2dnalra2ttbW1tcHBwcHV1dXV5eXl5fX19fX+AgICAgICAgP/73n3AAAB9AAAABQAAAAcAAABoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+
 export const useLiveSession = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -17,14 +20,60 @@ export const useLiveSession = () => {
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const isMountedRef = useRef(true);
 
+  // Wake Lock & Background Audio Refs
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const silentAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // Volume analyzer
   const analyzerRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
+
+    // Handle visibility change to restore audio context if tab comes back
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        if (inputAudioContextRef.current?.state === 'suspended') {
+          await inputAudioContextRef.current.resume();
+        }
+        if (audioContextRef.current?.state === 'suspended') {
+          await audioContextRef.current.resume();
+        }
+        // Re-request wake lock if we lost it
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => { 
+      isMountedRef.current = false; 
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      releaseWakeLock();
+    };
   }, []);
+
+  const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request('screen');
+      } catch (err) {
+        console.warn("Wake Lock request failed:", err);
+      }
+    }
+  };
+
+  const releaseWakeLock = async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+      } catch (err) {
+        console.warn("Wake Lock release failed:", err);
+      }
+    }
+  };
 
   const updateVolume = () => {
     if (!isMountedRef.current) return;
@@ -55,6 +104,19 @@ export const useLiveSession = () => {
       if (!apiKey) throw new Error("Chave API não encontrada.");
 
       const ai = new GoogleGenAI({ apiKey });
+
+      // 1. Activate Screen Wake Lock
+      await requestWakeLock();
+
+      // 2. Play Silent Audio (iOS/Android Background Keep-Alive Hack)
+      // This tricks the browser into thinking we are a music player, giving us higher priority
+      if (!silentAudioRef.current) {
+        silentAudioRef.current = new Audio(SILENT_AUDIO_URI);
+        silentAudioRef.current.loop = true;
+        silentAudioRef.current.volume = 0.01; // Almost silent
+      }
+      silentAudioRef.current.play().catch(e => console.warn("Silent audio playback failed", e));
+
 
       // Initialize Audio Contexts
       // We explicitly create them inside the user gesture flow
@@ -187,6 +249,7 @@ export const useLiveSession = () => {
               if (isMountedRef.current) {
                 setIsConnected(false);
                 setIsSpeaking(false);
+                releaseWakeLock();
               }
             },
             onerror: (err) => {
@@ -200,6 +263,7 @@ export const useLiveSession = () => {
                 }
                 setError(msg);
                 setIsConnected(false);
+                releaseWakeLock();
               }
             }
         }
@@ -211,11 +275,21 @@ export const useLiveSession = () => {
       console.error(err);
       if (isMountedRef.current) {
         setError(err.message || "Erro ao iniciar sessão.");
+        releaseWakeLock();
       }
     }
   }, []);
 
   const disconnect = useCallback(() => {
+    // Release Wake Lock
+    releaseWakeLock();
+
+    // Stop silent audio
+    if (silentAudioRef.current) {
+      silentAudioRef.current.pause();
+      silentAudioRef.current = null;
+    }
+
     if (sessionRef.current) {
         sessionRef.current.then((session: any) => {
             if(session.close) {
